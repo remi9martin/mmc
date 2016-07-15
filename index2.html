@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html>
+ 
+<head>
+ 
+  <meta charset="UTF-8">
+ 
+  <meta name="google" value="notranslate">
+ 
+  <!--
+Copyright (c) 2014 by Jonny Str�mberg (http://codepen.io/javve/pen/oEezp)
+ 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+ 
+  <title>MMC Medicine Phone/Paging List</title>
+ 
+  <style>.list {
+  font-family:sans-serif;
+}
+td {
+  padding:10px; 
+  border:solid 1px #eee;
+}
+ 
+input {
+  border:solid 1px #ccc;
+  border-radius: 5px;
+  padding:7px 14px;
+  margin-bottom:10px
+}
+input:focus {
+  outline:none;
+  border-color:#aaa;
+}
+.sort {
+  padding:8px 30px;
+  border-radius: 6px;
+  border:none;
+  display:inline-block;
+  color:#fff;
+  text-decoration: none;
+  background-color: #28a8e0;
+  height:30px;
+}
+.sort:hover {
+  text-decoration: none;
+  background-color:#1b8aba;
+}
+.sort:focus {
+  outline:none;
+}
+.sort:after {
+  display:inline-block;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  content:"";
+  position: relative;
+  top:-10px;
+  right:-5px;
+}
+.sort.asc:after {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid #fff;
+  content:"";
+  position: relative;
+  top:4px;
+  right:-5px;
+}
+.sort.desc:after {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 5px solid #fff;
+  content:"";
+  position: relative;
+  top:-4px;
+  right:-5px;
+}</style>
+ 
+  <script>
+    (function() {
+ 
+    /**
+    * Capture all errors for this pen
+    **/
+    window.onerror = function(message, file, line) { return true; }
+ 
+    /**
+    * Capture and kill Web Audio
+    **/
+    // Kill webKitAudioContext function and mozAudioContext so that they
+    // cannot play sounds in the grid
+    if (typeof(webkitAudioContext) != "undefined") {
+      webkitAudioContext = function() {return false;};
+    }
+ 
+    if (typeof(webkitAudioContext) != "undefined") {
+      mozAudioContext = function() {return false;};
+    }
+ 
+    // Kill the browser asking for access to the video cam or audio
+    navigator.webkitGetUserMedia = function(params, func) {
+      // stop all calls in the grid.
+    };
+ 
+    /**
+    * Capture and kill animations after X number of seconds
+    **/
+    window.__animationDuration = 4000;
+    window.__animationsTimedOut = false;
+    window.__animationRequests = [];
+    window.__requestAnimationFrame = false;
+    window.__cancelAnimationFrame = false;
+ 
+    var vendorsReqestAnimationFrame = ['requestAnimationFrame',
+                                       'mozRequestAnimationFrame',
+                                       'webkitRequestAnimationFrame'];
+ 
+    // find the browsers requestAnimationFrame and cancelAnimationFrame
+    for(var x = 0; x < vendorsReqestAnimationFrame.length; x++) {
+        if(!window.__requestAnimationFrame) {
+          window.__requestAnimationFrame = window[vendorsReqestAnimationFrame[x]];
+        }
+    }
+ 
+    window.__cancelAnimationFrame = window.cancelAnimationFrame || window.mozCancelAnimationFrame;
+ 
+    // Wrap the requestAnimationFrame so we can stop it in the future
+    var __reqFrame = function(callback, element) {
+      // after the timeout we no longer take requests
+      if(__animationsTimedOut) {
+        return 0;
+      }
+      else {
+        timerID = __requestAnimationFrame(callback, element);
+        __animationRequests.push(timerID);
+ 
+        return timerID;
+      }
+    }
+ 
+    for(var x = 0; x < vendorsReqestAnimationFrame.length; x++) {
+      window[vendorsReqestAnimationFrame[x]] = __reqFrame;
+    }
+ 
+    // Cancel the animations after expiration
+    setTimeout(function() {
+      for(var i=0; i < __animationRequests.length; i++) {
+        window.__cancelAnimationFrame(__animationRequests[i]);
+      }
+ 
+      __animationsTimedOut = true;
+    }, __animationDuration, 'push');
+ 
+    /**
+    * Capture setInterval and setTimeout to kill after X number of seconds
+    **/
+    window.setInterval = (function(oldSetInterval) {
+        var registered = [];
+ 
+        var f = function(a,b) {
+            // check if the time has expired,
+            // after __animationDuration expires don't take anymore setIntervals
+            if(this.timedOut) {
+              return 0;
+            }
+            else {
+              return registered[ registered.length ] = oldSetInterval(a,b);
+            }
+        };
+ 
+        f.clearAll = function() {
+            var r;
+ 
+            while(r = registered.pop()) {
+               clearInterval( r );
+            }
+ 
+            this.timedOut = true;
+        };
+ 
+        f.timedOut = false;
+ 
+        return f;
+    })(window.setInterval);
+ 
+    window.setTimeout = (function(oldSetTimeout) {
+        var registered = [];
+ 
+        // because some of our timeouts may time out afterwards
+        // we want to make sure they know the secret sauce to still use
+        // setTimeout after the time has expired, thats why we have a
+        // third param
+        var f = function(a,b, push) {
+            // check if the time has expired,
+            // after __animationDuration expires don't take anymore requests
+            if(this.timedOut && typeof(push) == 'undefined') {
+              return 0;
+            }
+            else {
+              // If push is there, never clear that interval
+              // so never add it to the registry
+              if(push) {
+                return oldSetTimeout(a,b);
+              }
+              else {
+                return registered[ registered.length ] = oldSetTimeout(a,b);
+              }
+            }
+        };
+ 
+        f.clearAll = function() {
+            var r;
+ 
+            while(r = registered.pop()) {
+               clearTimeout( r );
+            }
+ 
+            this.timedOut = true;
+        };
+ 
+        f.timedOut = false;
+ 
+        return f;
+    })(window.setTimeout);
+ 
+    setTimeout(function() {
+      setTimeout.clearAll();
+      setInterval.clearAll();
+    }, __animationDuration, 'push');
+ 
+  }());
+  </script>
+ 
+</head>
+ 
+<body onload="_l='t';">
+ 
+  <div id="users">
+  <input class="search" placeholder="Search" />
+  <button class="sort" data-sort="name">
+    Sort by name
+  </button>
+  <table>
+    <!-- IMPORTANT, class="list" have to be at tbody -->
+    <tbody class="list">
+      <tr><td class="name">Anesthesia</td>
+          <td class="born">page PAIN 7246</td></tr>
+      <tr><td class="name">Pain and Palliative</td>
+          <td class="born">page OUCH 6824</td></tr>
+      <tr><td class="name">Dental Clinic</td>
+          <td class="born">8322</td></tr>
+      <tr><td class="name">Endocrine</td>
+          <td class="born">5923</td></tr>
+      <tr><td class="name">ENT</td>
+          <td class="born">6260 / beeper 9754</td></tr>
+      <tr><td class="name">Geriatrics</td>
+          <td class="born">0347</td></tr>
+      <tr><td class="name">Gl</td>
+          <td class="born">7476 / beeper 0498</td></tr>
+      <tr><td class="name">Heme/Onc</td>
+          <td class="born">beeper 9978</td></tr>
+      <tr><td class="name">ID</td>
+          <td class="born">7974</td></tr>
+      <tr><td class="name">Antibiotics approval</td>
+          <td class="born">6467</td></tr>
+      <tr><td class="name">Medicine consult</td>
+          <td class="born">beeper 0333</td></tr>
+      <tr><td class="name">Micu fellow</td>
+          <td class="born">1720</td></tr>
+      <tr><td class="name">Nephrology</td>
+          <td class="born">7908</td></tr>
+      <tr><td class="name">Neuro phone</td>
+          <td class="born">6080</td></tr>
+      <tr><td class="name">Neurosurgery</td>
+          <td class="born">beeper 0553</td></tr>
+      <tr><td class="name">Ob/Gyn</td>
+          <td class="born">0990 / beeper 1495</td></tr>
+      <tr><td class="name">Optho</td>
+          <td class="born">8000</td></tr>
+      <tr><td class="name">Ortho</td>
+          <td class="born">1457 / beeper 0599</td></tr>
+      <tr><td class="name">PICC line</td>
+          <td class="born">0369</td></tr>
+      <tr><td class="name">Psychiatry</td>
+          <td class="born">7841 / 7848</td></tr>
+      <tr><td class="name">Pulmonary</td>
+          <td class="born">8380</td></tr>
+      <tr><td class="name">Rad/Onc</td>
+          <td class="born">718-765-2700</td></tr>
+      <tr><td class="name">Rheum</td>
+          <td class="born">8519</td></tr>
+      <tr><td class="name">TCM</td>
+          <td class="born">beeper 0562</td></tr>
+      <tr><td class="name">Surgery on-call</td>
+          <td class="born">beeper 0111</td></tr>
+      <tr><td class="name">Vascular PA</td>
+          <td class="born">7957 / 1650</td></tr>
+      <tr><td class="name">Wound Care</td>
+          <td class="born">7954 / p 0121</td></tr>
+      <tr><td class="name">Lab Approvals</td>
+          <td class="born">7078</td></tr>
+      <tr><td class="name">Lab ABG</td>
+          <td class="born">8926</td></tr>
+      <tr><td class="name">Lab Blood bank</td>
+          <td class="born">8400</td></tr>
+      <tr><td class="name">Lab Chemistry</td>
+          <td class="born">6307</td></tr>
+      <tr><td class="name">Lab Hematology</td>
+          <td class="born">8231</td></tr>
+      <tr><td class="name">Lab Hematology</td>
+          <td class="born">8231</td></tr>
+      <tr><td class="name">Lab Micro</td>
+          <td class="born">7460 / 7559</td></tr>
+      <tr><td class="name">Lab Peripheral smear</td>
+          <td class="born">7828 (STAT)</td></tr>
+      <tr><td class="name">Radiology On call</td>
+          <td class="born">beeper 0384 / p 8905</td></tr>
+      <tr><td class="name">Radiology CT</td>
+          <td class="born">7120</td></tr>
+      <tr><td class="name">Radiology ER CT</td>
+          <td class="born">6308</td></tr>
+      <tr><td class="name">EEG</td>
+          <td class="born">7473 / 5858</td></tr>
+      <tr><td class="name">IR</td>
+          <td class="born">7123</td></tr>
+      <tr><td class="name">Radiology Main Reading Room</td>
+          <td class="born">8892</td></tr>
+      <tr><td class="name">MRI</td>
+          <td class="born">6475</td></tr>
+      <tr><td class="name">Nuclear</td>
+          <td class="born">7130</td></tr>
+      <tr><td class="name">Neurorad read</td>
+          <td class="born">7307</td></tr>
+      <tr><td class="name">Radiology</td>
+          <td class="born">7100</td></tr>
+      <tr><td class="name">Ultrasound</td>
+          <td class="born">7133</td></tr>
+      <tr><td class="name">Vascular lab</td>
+          <td class="born">7274</td></tr>
+      <tr><td class="name">X-ray</td>
+          <td class="born">7101</td></tr>
+      <tr><td class="name">Chest pain nurse</td>
+          <td class="born">1791</td></tr>
+      <tr><td class="name">CHF team</td>
+          <td class="born">7315</td></tr>
+      <tr><td class="name">Cardiac cath</td>
+          <td class="born">6395</td></tr>
+      <tr><td class="name">Echo reading room</td>
+          <td class="born">7529</td></tr>
+      <tr><td class="name">Echo lab</td>
+          <td class="born">8470</td></tr>
+      <tr><td class="name">Stress lab</td>
+          <td class="born">8314</td></tr>
+      <tr><td class="name">TEE</td>
+          <td class="born">8244</td></tr>
+      <tr><td class="name">EP consult</td>
+          <td class="born">6385</td></tr>
+      <tr><td class="name">Cardiology Consult</td>
+          <td class="born">7489</td></tr>
+      <tr><td class="name">Dr. Rudolph</td>
+          <td class="born">7763</td></tr>
+      <tr><td class="name">Stroke PA</td>
+          <td class="born">7505</td></tr>
+      <tr><td class="name">Dictations</td>
+          <td class="born">8320</td></tr>
+      <tr><td class="name">ED Management</td>
+          <td class="born">1709</td></tr>
+      <tr><td class="name">Hospitalist phone</td>
+          <td class="born">4711 /  4712</td></tr>
+      <tr><td class="name">Hemodialysis</td>
+          <td class="born">7358</td></tr>
+      <tr><td class="name">Infection Control</td>
+          <td class="born">6882</td></tr>
+      <tr><td class="name">Medical records Archives</td>
+          <td class="born">7020</td></tr>
+      <tr><td class="name">Metabolic Support</td>
+          <td class="born">7949</td></tr>
+      <tr><td class="name">MIS</td>
+          <td class="born">6227</td></tr>
+      <tr><td class="name">Rapid Response</td>
+          <td class="born">33 / 4711</td></tr>
+      <tr><td class="name">Speech</td>
+          <td class="born">7453</td></tr>
+      <tr><td class="name">Transport</td>
+          <td class="born">8345</td></tr>
+      <tr><td class="name">CCU</td>
+          <td class="born">7910</td></tr>
+      <tr><td class="name">MICU</td>
+          <td class="born">7917 / 8216</td></tr>
+      <tr><td class="name">MICU Conf Room</td>
+          <td class="born">8885</td></tr>
+      <tr><td class="name">G1 West</td>
+          <td class="born">7021</td></tr>
+      <tr><td class="name">B2</td>
+          <td class="born">6410</td></tr>
+      <tr><td class="name">G2 </td>
+          <td class="born">7720</td></tr>
+      <tr><td class="name">A5</td>
+          <td class="born">7112</td></tr>
+      <tr><td class="name">B5</td>
+          <td class="born">8223</td></tr>
+      <tr><td class="name">K5</td>
+          <td class="born">7570</td></tr>
+      <tr><td class="name">K5 Conf Room</td>
+          <td class="born">8417</td></tr>
+      <tr><td class="name">K6</td>
+          <td class="born">7560</td></tr>
+      <tr><td class="name">K6 Conf Room</td>
+          <td class="born">7081</td></tr>
+      <tr><td class="name">6West</td>
+          <td class="born">7900</td></tr>
+      <tr><td class="name">6East</td>
+          <td class="born">7530</td></tr>
+      <tr><td class="name">K7</td>
+          <td class="born">7537</td></tr>
+      <tr><td class="name">7West</td>
+          <td class="born">7522</td></tr>
+      <tr><td class="name">7East</td>
+          <td class="born">8204</td></tr>
+      <tr><td class="name">8West</td>
+          <td class="born">8203</td></tr>
+      <tr><td class="name">8East</td>
+          <td class="born">8211</td></tr>
+      <tr><td class="name">Admitting</td>
+          <td class="born">7768 / 8333 / 8615</td></tr>
+      <tr><td class="name">Chinese Translator</td>
+          <td class="born">1445 / 1480 / 1493</td></tr>
+      <tr><td class="name">ER Southside</td>
+          <td class="born">7222</td></tr>
+      <tr><td class="name">ER Northside</td>
+          <td class="born">7444</td></tr>
+      <tr><td class="name">ER Patient Rep</td>
+          <td class="born">7179</td></tr>
+      <tr><td class="name">ER Expeditor </td>
+          <td class="born">1417</td></tr>
+      <tr><td class="name">Security Office</td>
+          <td class="born">7733</td></tr>
+      <tr><td class="name">Chiefs Office</td>
+          <td class="born">7075 / 7245</td></tr>
+      <tr><td class="name">Department of Medicine</td>
+          <td class="born">7074</td></tr>
+      <tr><td class="name">Irina</td>
+          <td class="born">beeper 9308 </td></tr>
+      <tr><td class="name">Priscilla</td>
+          <td class="born">beeper 9776</td></tr>
+      <tr><td class="name">Kelly</td>
+          <td class="born">beeper 1570</td></tr>
+      <tr><td class="name">CHIEF ON CALL PAGER</td>
+          <td class="born">beeper 9145</td></tr>
+      <tr><td class="name">Orange Team</td>
+          <td class="born">beeper 9693</td></tr>
+      <tr><td class="name">Yellow Team</td>
+          <td class="born">beeper 9692</td></tr>
+      <tr><td class="name">Purple Team</td>
+          <td class="born">beeper 9690</td></tr>
+      <tr><td class="name">Brown Team</td>
+          <td class="born">beeper 9550</td></tr>
+      <tr><td class="name">OAT</td>
+          <td class="born">beeper 9691</td></tr>
+    </tbody>
+  </table>
+ 
+</div>
+<script src="http://listjs.com/no-cdn/list.js"></script>
+ 
+  <script src="http://assets.codepen.io/assets/common/stopExecutionOnTimeout-032733852957aef8f9e562ef34924e61.js"></script>
+ 
+  <script>
+var options = {
+    valueNames: [
+        'name',
+        'born'
+    ]
+};
+var userList = new List('users', options);
+  </script>
+ 
+  <script>
+  (function() {
+ 
+    setTimeout(function() {
+      // If onload hasn't been called, stop all requests after 2 seconds
+      if(typeof(_l) == 'undefined') {
+        if(window.stop !== undefined) window.stop();
+        else if(document.execCommand !== undefined) document.execCommand("Stop", false);
+      }
+    }, 2000, 'push');
+ 
+    /*
+    * Capture and kill CSS animations after X number of seconds
+    */
+    function pauseAnimations() {
+      var body = document.getElementsByTagName('body')[0];
+ 
+      if(body.addEventListener) {
+        body.addEventListener("webkitAnimationStart", listener, false);
+        body.addEventListener("webkitAnimationIteration", listener, false);
+        body.addEventListener("animationstart", listener, false);
+        body.addEventListener("animationiteration", listener, false);
+      }
+    }
+ 
+    function listener(e) {
+      if(e.type == "webkitAnimationStart" || e.type == "webkitAnimationIteration") {
+        var targetEl = e.target;
+ 
+        setTimeout(function() {
+          targetEl.style.webkitAnimationPlayState = 'paused';
+        }, __animationDuration, 'push');
+      }
+      else if(e.type == "animationstart" || e.type == "animationiteration") {
+        var targetEl = e.target;
+ 
+        setTimeout(function() {
+          targetEl.style.MozAnimationPlayState = 'paused';
+        }, __animationDuration, 'push');
+      }
+    }
+ 
+    pauseAnimations();
+ 
+    // Pause all audio elements, allow the audio/video
+    // elements to render before stopping them
+    function pauseElementTypes(type) {
+      for (var i = 0, els = document.getElementsByTagName(type); i < els.length; i++) {
+        els[i].pause();
+      }
+    }
+ 
+    // Wait until the elements have been created to pause them
+    setTimeout(function() {
+      pauseElementTypes('audio');
+      pauseElementTypes('video');
+    }, 100);
+ 
+  }());
+  </script>
+ 
+</body>
+ 
+</html>
